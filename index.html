@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EV Parlay Simulator v1.2</title>
+    <title>EV Parlay Simulator v1.3</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -103,6 +103,20 @@
             font-size: 14px;
             transition: border-color 0.2s;
             -webkit-appearance: none;
+        }
+
+        /* Improved Dropdown Styling for Groups */
+        select optgroup {
+            background-color: #1e293b;
+            color: var(--text-dim);
+            font-style: normal;
+            font-weight: bold;
+        }
+        
+        select option {
+            background-color: #0f172a;
+            color: white;
+            padding: 10px;
         }
 
         input:focus, select:focus { outline: none; border-color: var(--accent); }
@@ -260,7 +274,7 @@
 </div>
 
 <div class="container">
-    <h2>EV Parlay Simulator <span class="badge">v1.2</span></h2>
+    <h2>EV Parlay Simulator <span class="badge">v1.3</span></h2>
     
     <div class="controls">
         <div class="control-group">
@@ -344,8 +358,8 @@
     };
 
     let myChart = null;
-    let globalSimulationData = {}; // Stores all 50 runs for each math group
-    let globalScenarioMap = {}; // Maps each scenario ID to its specific assigned run index
+    let globalSimulationData = {}; 
+    let globalScenarioMap = {};
 
     function validateInteger(input) {
         if(input.value.includes('.')) input.value = Math.floor(parseFloat(input.value));
@@ -376,34 +390,29 @@
         document.getElementById('betsDisplay').innerText = sims.toLocaleString();
 
         setTimeout(() => {
-            // 1. Setup Scenarios
             let scenarios = getScenarios();
             let validScenarios = scenarios.filter(s => isSupported(s.type, legs));
+            
+            // New Grouped Dropdown Logic
             populateChartDropdown(validScenarios);
 
-            // 2. Identify Unique Math Groups
-            let mathGroups = {}; // Key: "Signature", Value: { scenarios: [], runs: [] }
-            
+            // Grouping Logic for Simulation
+            let mathGroups = {}; 
             validScenarios.forEach(s => {
                 let sig = getMathSignature(legs, s.conf, s.flex);
                 if(!mathGroups[sig]) mathGroups[sig] = { signature: sig, scenarios: [], runs: [] };
                 mathGroups[sig].scenarios.push(s);
             });
 
-            // 3. Run Simulations per Group (Batch of 50)
             for(let key in mathGroups) {
                 let group = mathGroups[key];
-                // Run 50 sims for this math signature
                 for(let i=0; i<50; i++) {
-                    // Use config from the first scenario in the group (they are identical)
                     let ref = group.scenarios[0];
                     let run = runSingleSimulation(sims, legs, winRate, wager, ref.conf, ref.flex);
                     group.runs.push(run);
                 }
             }
 
-            // 4. Assign Specific Runs to Scenarios (Strict Indexing)
-            // Example: PP 3-Leg gets Run #0, UD 3-Leg gets Run #1
             globalSimulationData = mathGroups;
             globalScenarioMap = {};
 
@@ -411,7 +420,6 @@
             let chartTarget = null;
             let maxMathEV = -Infinity;
 
-            // Calculate Math EV first for badges
             validScenarios.forEach(s => {
                 s.mathEV = calculateExpectedValue(winRate, legs, s.conf, s.flex);
                 if(s.mathEV > maxMathEV) maxMathEV = s.mathEV;
@@ -420,23 +428,18 @@
             validScenarios.forEach(s => {
                 let sig = getMathSignature(legs, s.conf, s.flex);
                 let group = mathGroups[sig];
-                
-                // Assign a unique index for this scenario within the group
                 let assignedIndex = group.scenarios.indexOf(s) % 50;
                 
-                // Store assignment
                 globalScenarioMap[s.type] = {
                     groupKey: sig,
                     runIndex: assignedIndex,
                     runData: group.runs[assignedIndex]
                 };
 
-                s.profit = group.runs[assignedIndex].finalProfit; // This matches the chart line
-                
+                s.profit = group.runs[assignedIndex].finalProfit; 
                 if(s.profit > maxSimProfit) maxSimProfit = s.profit;
             });
 
-            // 5. Render Table
             const tbody = document.getElementById('resultsBody');
             tbody.innerHTML = '';
 
@@ -479,36 +482,30 @@
             visSection.classList.remove('hidden');
             btn.disabled = false;
 
-            // Initial Chart Render
             document.getElementById('chartStrategy').value = chartTarget.type;
             updateChartSelection();
 
         }, 100);
     }
 
-    // New Function: Handles Dropdown Switch without Re-Running
     function updateChartSelection() {
         const type = document.getElementById('chartStrategy').value;
         const assignment = globalScenarioMap[type];
         
         if(!assignment) return;
 
-        // Retrieve the pre-calculated group
         const group = globalSimulationData[assignment.groupKey];
-        const heroRun = group.runs[assignment.runIndex]; // The specific run for this book
+        const heroRun = group.runs[assignment.runIndex]; 
         
-        // Setup Chart Data from Pre-Calc
         const heroData = heroRun.dataPoints;
         const ghostRuns = group.runs.map(r => r.dataPoints);
         
-        // Calculate Average
         let averageData = new Array(heroData.length).fill(0);
         ghostRuns.forEach(runData => {
             for(let i=0; i<runData.length; i++) averageData[i] += runData[i];
         });
         averageData = averageData.map(val => val / ghostRuns.length);
 
-        // Calculate Math Line (Re-calc is cheap)
         const sims = Math.floor(parseFloat(document.getElementById('sims').value));
         const wager = parseFloat(document.getElementById('wager').value);
         const winRate = parseFloat(document.getElementById('winRate').value) / 100;
@@ -532,13 +529,10 @@
         renderChart(ghostRuns, heroData, averageData, mathData, sims, mathColor);
     }
 
-    // Helper: Create unique signature for Math Grouping
     function getMathSignature(legs, structure, isFlex) {
         if(!isFlex) {
-            // Power: "3-6x"
             return `${legs}-${structure[legs]}x`; 
         } else {
-            // Flex: "3-F-3:2.25-2:1.25"
             let tiers = structure[legs];
             let keys = Object.keys(tiers).sort();
             let sig = `${legs}-F`;
@@ -554,7 +548,6 @@
 
         for(let i=1; i<=totalBets; i++) {
             let wins = 0;
-            // Loop unrolling for slight speed boost
             for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
             let pnl = calcProfit(wins, legs, wager, structure, isFlex);
             bankroll += pnl;
@@ -634,12 +627,33 @@
     function populateChartDropdown(scenarios) {
         const select = document.getElementById('chartStrategy');
         select.innerHTML = '';
+        
+        const groups = {};
+        
+        // Parse the name to separate Book (PrizePicks) from Type (Power)
         scenarios.forEach(s => {
-            let opt = document.createElement('option');
-            opt.value = s.type;
-            opt.innerHTML = s.name;
-            select.appendChild(opt);
+            const parts = s.name.split(' '); // Split "PrizePicks Power"
+            const bookName = parts[0];       // "PrizePicks"
+            const typeName = parts.slice(1).join(' '); // "Power"
+            
+            if(!groups[bookName]) groups[bookName] = [];
+            groups[bookName].push({ id: s.type, label: typeName });
         });
+
+        // Create OptGroups
+        for(const [book, options] of Object.entries(groups)) {
+            const groupEl = document.createElement('optgroup');
+            groupEl.label = book;
+            
+            options.forEach(opt => {
+                const optionEl = document.createElement('option');
+                optionEl.value = opt.id;
+                optionEl.innerText = opt.label;
+                groupEl.appendChild(optionEl);
+            });
+            
+            select.appendChild(groupEl);
+        }
     }
 
     function formatMoney(amount) {
