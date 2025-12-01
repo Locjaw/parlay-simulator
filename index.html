@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EV Parlay Simulator v6.2 (Landscape Fixed)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --text-main: #f1f5f9;
+            --text-dim: #94a3b8;
+            --border: #334155;
+            --success: #4ade80;
+            --danger: #f87171;
+            --warning: #facc15;
+            --gold: #fbbf24;
+            --hero: #38bdf8;
+            --lucky: #a855f7;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 10px;
+            font-size: 14px;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 20px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: var(--accent);
+            font-size: 18px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .badge {
+            font-size: 10px;
+            background: var(--accent);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+        }
+
+        /* --- CONTROLS --- */
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            .container { padding: 15px; }
+            .results-table { font-size: 12px; }
+            h2 { font-size: 16px; }
+        }
+
+        .control-group { display: flex; flex-direction: column; }
+
+        label {
+            color: var(--text-dim);
+            font-size: 11px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            cursor: help;
+        }
+
+        input, select {
+            background-color: #0f172a;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+        }
+
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            touch-action: manipulation;
+        }
+
+        button:active { transform: translateY(1px); }
+
+        /* --- TABLE STYLES --- */
+        .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        
+        .results-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 10px;
+            font-size: 13px;
+            min-width: 100%;
+        }
+
+        .results-table th { text-align: left; color: var(--text-dim); padding: 12px; border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; font-size: 11px; }
+        .results-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        tr.recommended { background-color: rgba(251, 191, 36, 0.05); }
+        tr.recommended td:first-child { border-left: 3px solid var(--gold); }
+
+        /* RESPONSIVE COLUMN HIDING */
+        @media (max-width: 640px) {
+            .col-payout { display: none; }
+        }
+
+        .odds-tag, .rec-badge, .lucky-badge {
+            display: inline-block; margin-left: 4px; font-size: 10px; padding: 2px 5px; border-radius: 4px; font-weight: 800; vertical-align: middle; cursor: help; white-space: nowrap;
+        }
+        .odds-tag { font-family: monospace; color: var(--text-dim); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); }
+        .rec-badge { background-color: var(--gold); color: #000; }
+        .lucky-badge { background-color: var(--lucky); color: #fff; }
+        .payout-cell { font-family: monospace; font-size: 11px; color: var(--warning); }
+        .roi-pos { color: var(--success); font-weight: bold; }
+        .roi-neg { color: var(--danger); font-weight: bold; }
+        .hidden { display: none !important; }
+        .loading { text-align: center; color: var(--text-dim); padding: 30px; font-style: italic; }
+
+        /* --- CHART STYLES --- */
+        .chart-section {
+            margin-top: 30px;
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 2 / 1; 
+            max-height: 450px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .rotate-hint {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 10;
+            white-space: nowrap;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+
+        .landscape-warning {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: var(--bg-color);
+            z-index: 10000;
+            color: var(--text-dim);
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* --- LANDSCAPE MODE LOGIC --- */
+        @media screen and (orientation: landscape) and (max-height: 500px) {
+            /* 1. If Sim is NOT active (body doesn't have class), show warning */
+            body:not(.sim-active) .landscape-warning { display: flex; }
+            body:not(.sim-active) .container { display: none; }
+
+            /* 2. If Sim IS active, show Fullscreen Chart */
+            body.sim-active { padding: 0; margin: 0; background-color: #0f172a; overflow: hidden; }
+            body.sim-active .container { padding: 0; border: none; box-shadow: none; max-width: none; background: transparent; }
+            h2, .controls, button, .table-container, .loading, .results-table { display: none !important; }
+            
+            .chart-section {
+                margin: 0; border: none; padding: 0;
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                z-index: 9999;
+                background-color: var(--bg-color);
+                display: flex !important;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            }
+
+            .chart-wrapper { margin: 0; width: 100vw; height: 100vh; }
+            .chart-container { aspect-ratio: auto; width: 100vw; height: 100vh; max-height: none; }
+            .rotate-hint { display: none !important; }
+            .chart-desc-text { display: none; }
+        }
+
+        @media (max-width: 768px) and (orientation: portrait) {
+            .rotate-hint { display: block; }
+            canvas { pointer-events: none; }
+        }
+
+        #bestValueList { color: var(--hero); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="landscape-warning">
+    <div style="font-size: 40px; margin-bottom: 20px;">⚠️</div>
+    <h3>Simulation Not Ready</h3>
+    <p>Please rotate your phone to <strong>Portrait</strong> and run the simulation first.</p>
+</div>
+
+<div class="container">
+    <h2>EV Parlay Simulator <span class="badge">v6.2</span></h2>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label title="Your expected long-term accuracy">Leg Win Rate (%)</label>
+            <input type="number" id="winRate" value="56" step="0.1" inputmode="decimal">
+        </div>
+        <div class="control-group">
+            <label title="Amount wagered per bet">Wager ($)</label>
+            <input type="number" id="wager" value="25" inputmode="decimal">
+        </div>
+        <div class="control-group">
+            <label title="Total selections in the parlay">Number of Legs</label>
+            <input type="number" id="legs" value="5" min="2" max="8" inputmode="numeric" oninput="validateInteger(this)">
+        </div>
+        <div class="control-group">
+            <label title="Total bets simulated. Lower numbers = Higher variance.">Total Bets (Volume)</label>
+            <input type="number" id="sims" value="5000" inputmode="numeric" oninput="validateInteger(this)">
+        </div>
+    </div>
+
+    <button onclick="runDeepSimulation()">Run Simulation</button>
+
+    <div id="loading" class="loading hidden">Running Simulation...</div>
+
+    <div class="table-container">
+        <table class="results-table hidden" id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Book / Mode</th>
+                    <th class="col-payout">Payout</th>
+                    <th>Profit</th>
+                    <th>ROI</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+        </table>
+    </div>
+
+    <div id="visualizerSection" class="chart-section hidden">
+        <div class="chart-desc-text">
+            <h3 style="margin-top:0; font-size:16px; color:var(--text-main);">Simulation Context</h3>
+            <p style="color:var(--text-dim); font-size:12px; margin-bottom:15px; line-height: 1.4;">
+                Charting <strong>50 possible futures</strong> of <span id="betsDisplay"></span> bets for: <span id="bestValueList"></span>.<br>
+                <span style="color:var(--hero)">● Blue</span>: You | <span style="color:var(--gold)">● Gold</span>: Avg | <span style="color:var(--success)">● Green</span>: Math
+            </p>
+        </div>
+        
+        <div class="chart-wrapper">
+            <div class="rotate-hint">🔄 Rotate phone for detail</div>
+            <div class="chart-container">
+                <canvas id="simChart"></canvas>
+            </div>
+        </div>
+
+        <div class="controls chart-desc-text" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px; grid-template-columns: 1fr;">
+             <div class="control-group">
+                <label>View Strategy</label>
+                <select id="chartStrategy" onchange="runVisualizerOnly()">
+                    </select>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- PAYOUT CONFIGURATION (2025) ---
+    const CONFIG = {
+        PrizePicks: {
+            Power: { 2: 3, 3: 6, 4: 10, 5: 20, 6: 37.5 },
+            Flex: { 3: {3: 3, 2: 1}, 4: {4: 6, 3: 1.5}, 5: {5: 10, 4: 2, 3: 0.4}, 6: {6: 25, 5: 2, 4: 0.4} }
+        },
+        Underdog: {
+            Power: { 2: 3, 3: 6, 4: 10, 5: 20 },
+            Insured: { 3: {3: 3, 2: 1}, 4: {4: 6, 3: 1.5}, 5: {5: 10, 4: 2.5}, 6: {6: 25, 5: 2.6, 4: 0.25} }
+        },
+        Betr: {
+            Perfect: { 2: 3, 3: 6, 4: 10, 5: 20, 6: 35, 7: 50, 8: 100 },
+            Dynamic: { 3: {3: 2.25, 2: 1.25}, 4: {4: 5, 3: 1.5}, 5: {5: 10, 4: 2.5}, 6: {6: 20, 5: 1.25, 4: 1.05}, 7: {7: 30, 6: 2, 5: 1.25}, 8: {8: 50, 7: 2, 6: 1.5, 5: 1.25} }
+        }
+    };
+
+    let myChart = null;
+    let globalUserData = null; 
+    let lastSimParams = {};
+
+    function validateInteger(input) {
+        if(input.value.includes('.')) input.value = Math.floor(parseFloat(input.value));
+        if(input.id === 'legs') {
+            if(input.value > 8) input.value = 8;
+            if(input.value < 2 && input.value !== '') input.value = 2;
+        }
+    }
+
+    function runDeepSimulation() {
+        const btn = document.querySelector('button');
+        const loading = document.getElementById('loading');
+        const table = document.getElementById('resultsTable');
+        const visSection = document.getElementById('visualizerSection');
+        
+        btn.disabled = true;
+        table.classList.add('hidden');
+        visSection.classList.add('hidden');
+        loading.classList.remove('hidden');
+
+        // *** FIX: Flag body to enable landscape mode ***
+        document.body.classList.add('sim-active');
+
+        const sims = Math.floor(parseFloat(document.getElementById('sims').value));
+        const wager = parseFloat(document.getElementById('wager').value);
+        const winRate = parseFloat(document.getElementById('winRate').value) / 100;
+        const legs = Math.floor(parseFloat(document.getElementById('legs').value));
+
+        document.getElementById('betsDisplay').innerText = sims.toLocaleString();
+
+        setTimeout(() => {
+            let scenarios = getScenarios();
+            let validScenarios = scenarios.filter(s => isSupported(s.type, legs));
+
+            populateChartDropdown(validScenarios);
+
+            let maxMathEV = -Infinity;
+            validScenarios.forEach(s => {
+                s.mathEV = calculateExpectedValue(winRate, legs, s.conf, s.flex);
+                if(s.mathEV > maxMathEV) maxMathEV = s.mathEV;
+            });
+
+            validScenarios.forEach(s => {
+                let run = runSingleSimulation(sims, legs, winRate, wager, s.conf, s.flex);
+                s.profit = run.finalProfit;
+                s.dataPoints = run.dataPoints;
+            });
+
+            let maxSimProfit = -Infinity;
+            validScenarios.forEach(s => { if(s.profit > maxSimProfit) maxSimProfit = s.profit; });
+
+            let chartTarget = null;
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+
+            validScenarios.forEach(s => {
+                let roi = (s.profit / (sims * wager)) * 100;
+                let payoutText = getPayoutDisplay(s.conf, legs, s.flex);
+                
+                let isBestValue = (Math.abs(s.mathEV - maxMathEV) < 0.0001);
+                let isLuckyRun = (!isBestValue && s.profit >= maxSimProfit);
+                
+                let badgesHtml = '';
+                let beRate = calculateExactBreakEven(legs, s.conf, s.flex);
+                let beOdds = rateToAmerican(beRate);
+                
+                badgesHtml += `<span class="odds-tag" title="Break Even Odds">${beOdds}</span> `;
+                
+                if (isBestValue) {
+                    badgesHtml += `<span class="rec-badge" title="Mathematical Winner">🏆 BEST VALUE</span>`;
+                    if(!chartTarget) chartTarget = s; 
+                } else if (isLuckyRun) {
+                    badgesHtml += `<span class="lucky-badge" title="High Variance Winner">🍀 LUCKY RUN</span>`;
+                }
+
+                let rowClass = isBestValue ? 'recommended' : '';
+
+                let row = `<tr class="${rowClass}">
+                    <td title="Payout Structure: ${payoutText}">${s.name} <br>${badgesHtml}</td>
+                    <td class="payout-cell col-payout">${payoutText}</td>
+                    <td class="${roi >= 0 ? 'roi-pos' : 'roi-neg'}">$${formatMoney(s.profit)}</td>
+                    <td class="${roi >= 0 ? 'roi-pos' : 'roi-neg'}">${roi.toFixed(1)}%</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            if(!chartTarget) chartTarget = validScenarios[0];
+
+            lastSimParams = { sims, legs, winRate, wager };
+            globalUserData = chartTarget;
+
+            loading.classList.add('hidden');
+            table.classList.remove('hidden');
+            visSection.classList.remove('hidden');
+            btn.disabled = false;
+
+            document.getElementById('chartStrategy').value = chartTarget.type;
+            document.getElementById('bestValueList').innerText = chartTarget.name;
+            runVisualizerOnly(true);
+
+        }, 100);
+    }
+
+    function runSingleSimulation(totalBets, legs, winRate, wager, structure, isFlex) {
+        let bankroll = 0;
+        let dataPoints = [];
+        let interval = Math.max(1, Math.floor(totalBets / 200)); 
+
+        for(let i=1; i<=totalBets; i++) {
+            let wins = 0;
+            for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
+            let pnl = calcProfit(wins, legs, wager, structure, isFlex);
+            bankroll += pnl;
+            if(i % interval === 0) dataPoints.push(bankroll);
+        }
+        return { finalProfit: bankroll, dataPoints: dataPoints };
+    }
+
+    function runVisualizerOnly(useExistingHero = false) {
+        const type = document.getElementById('chartStrategy').value;
+        const { sims, legs, winRate, wager } = lastSimParams;
+        // Chart now uses the exact same volume as the simulation
+        const betsPerRun = sims; 
+
+        let scenarios = getScenarios();
+        let selected = scenarios.find(s => s.type === type);
+        
+        document.getElementById('bestValueList').innerText = selected.name;
+
+        let heroData = [];
+        if (useExistingHero && globalUserData && globalUserData.type === type) {
+            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
+            heroData = run.dataPoints;
+        } else {
+            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
+            heroData = run.dataPoints;
+        }
+
+        let ghostRuns = [];
+        let averageData = new Array(heroData.length).fill(0);
+        let numGhostRuns = 49;
+
+        for(let r=0; r<numGhostRuns; r++) {
+            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
+            ghostRuns.push(run.dataPoints);
+            for(let i=0; i<run.dataPoints.length; i++) averageData[i] += run.dataPoints[i];
+        }
+
+        for(let i=0; i<heroData.length; i++) averageData[i] += heroData[i];
+        averageData = averageData.map(val => val / (numGhostRuns + 1));
+
+        let evMultiplier = calculateExpectedValue(winRate, legs, selected.conf, selected.flex);
+        let theoreticalProfitPerBet = (evMultiplier - 1) * wager;
+        let mathColor = (evMultiplier >= 1.0) ? '#4ade80' : '#f87171'; 
+        
+        let mathData = [];
+        let interval = Math.max(1, Math.floor(betsPerRun / 200));
+        for(let i=1; i<=betsPerRun; i+=interval) {
+            mathData.push(theoreticalProfitPerBet * i);
+        }
+        if(mathData.length < averageData.length) mathData.push(theoreticalProfitPerBet * betsPerRun);
+
+        renderChart(ghostRuns, heroData, averageData, mathData, betsPerRun, mathColor);
+    }
+
+    function renderChart(ghostRuns, heroRun, averageRun, mathRun, totalBets, mathColor) {
+        const ctx = document.getElementById('simChart').getContext('2d');
+        if(myChart) myChart.destroy();
+        
+        let interval = Math.max(1, Math.floor(totalBets / 200));
+        const labels = Array.from({length: averageRun.length}, (_, i) => (i + 1) * interval);
+
+        let datasets = [];
+
+        ghostRuns.forEach(run => {
+            datasets.push({
+                label: 'Other Reality',
+                data: run,
+                borderColor: 'rgba(148, 163, 184, 0.1)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.1
+            });
+        });
+
+        datasets.push({ label: 'Math Expectation', data: mathRun, borderColor: mathColor, borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0, order: 0 });
+        datasets.push({ label: 'Your Run', data: heroRun, borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.1, order: 1 });
+        datasets.push({ label: 'Average', data: averageRun, borderColor: '#fbbf24', borderWidth: 3, pointRadius: 0, fill: false, tension: 0.1, order: 0 });
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false, 
+                animation: false,
+                plugins: {
+                    legend: { 
+                        display: true, 
+                        labels: { 
+                            filter: (item) => item.text !== 'Other Reality',
+                            color: '#94a3b8',
+                            usePointStyle: true,
+                            boxWidth: 8
+                        }
+                    },
+                    tooltip: { 
+                        mode: 'index', 
+                        intersect: false, 
+                        callbacks: { 
+                            label: function(context) { 
+                                if(context.dataset.label === 'Other Reality') return null;
+                                return `${context.dataset.label}: $${context.raw.toLocaleString()}`; 
+                            } 
+                        } 
+                    }
+                },
+                scales: {
+                    x: { display: false }, 
+                    y: { 
+                        grid: { color: '#334155' }, 
+                        ticks: { 
+                            color: '#94a3b8',
+                            callback: function(value) { return '$' + value/1000 + 'k'; }
+                        } 
+                    }
+                }
+            }
+        });
+    }
+
+    // --- HELPERS ---
+    function populateChartDropdown(scenarios) {
+        const select = document.getElementById('chartStrategy');
+        select.innerHTML = '';
+        scenarios.forEach(s => {
+            let opt = document.createElement('option');
+            opt.value = s.type;
+            opt.innerHTML = s.name;
+            select.appendChild(opt);
+        });
+    }
+
+    function formatMoney(amount) {
+        if(Math.abs(amount) > 999999) return (amount/1000000).toFixed(1) + 'M';
+        if(Math.abs(amount) > 999) return (amount/1000).toFixed(1) + 'k';
+        return amount.toLocaleString();
+    }
+
+    function getScenarios() {
+        return [
+            { name: "PrizePicks Power", type: "pp_power", conf: CONFIG.PrizePicks.Power, flex: false },
+            { name: "PrizePicks Flex", type: "pp_flex", conf: CONFIG.PrizePicks.Flex, flex: true },
+            { name: "Underdog Power", type: "ud_power", conf: CONFIG.Underdog.Power, flex: false },
+            { name: "Underdog Insured", type: "ud_insured", conf: CONFIG.Underdog.Insured, flex: true },
+            { name: "Betr Perfect", type: "betr_perf", conf: CONFIG.Betr.Perfect, flex: false },
+            { name: "Betr Dynamic", type: "betr_dyn", conf: CONFIG.Betr.Dynamic, flex: true }
+        ];
+    }
+    // Math functions
+    function calculateExpectedValue(winRate, legs, structure, isFlex) {
+        let expectedReturn = 0;
+        if(!isFlex) {
+            if(structure[legs]) expectedReturn = Math.pow(winRate, legs) * structure[legs];
+        } else {
+            let tiers = structure[legs];
+            if(tiers) {
+                for(let wins in tiers) {
+                    let k = parseInt(wins);
+                    let prob = (factorial(legs)/(factorial(k)*factorial(legs-k))) * Math.pow(winRate, k) * Math.pow(1-winRate, legs-k);
+                    expectedReturn += prob * tiers[wins];
+                }
+            }
+        }
+        return expectedReturn;
+    }
+    function factorial(n) { if(n<2) return 1; let r=1; for(let i=2; i<=n; i++) r*=i; return r; }
+    function calculateExactBreakEven(legs, structure, isFlex) {
+        let low = 0.50, high = 0.65;
+        for(let i=0; i<20; i++) {
+            let mid = (low + high) / 2;
+            let val = calculateExpectedValue(mid, legs, structure, isFlex);
+            if(val > 1.0) high = mid; else low = mid;
+        }
+        return high;
+    }
+    function rateToAmerican(rate) {
+        if (rate === 0.5) return "+100";
+        if(rate > 0.5) return Math.round(-(rate/(1-rate))*100);
+        return "+" + Math.round(((1/rate)-1)*100);
+    }
+    function calcProfit(wins, legs, wager, structure, isFlex) {
+        let mult = 0;
+        if(!isFlex) { if(structure[legs] && wins === legs) mult = structure[legs]; } 
+        else { if(structure[legs] && structure[legs][wins]) mult = structure[legs][wins]; }
+        return mult > 0 ? (wager * mult) - wager : -wager;
+    }
+    function getPayoutDisplay(structure, legs, isFlex) {
+        if (!structure[legs]) return "-";
+        if (!isFlex) return `${structure[legs]}x`;
+        let tiers = structure[legs];
+        let keys = Object.keys(tiers).sort((a,b) => b-a);
+        return keys.map(k => `${k}: ${tiers[k]}x`).join(' | ');
+    }
+    function isSupported(type, legs) {
+        if(type === 'pp_power' && (legs > 6 || legs < 2)) return false;
+        if(type === 'pp_flex' && legs < 3) return false;
+        if(type === 'ud_power' && legs > 5) return false;
+        if(type === 'ud_insured' && (legs < 3 || legs > 6)) return false;
+        if(type.startsWith('betr') && legs > 8) return false;
+        return true;
+    }
+</script>
+
+</body>
+</html>
