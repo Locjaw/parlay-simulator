@@ -108,7 +108,7 @@
         /* Improved Dropdown Styling for Groups */
         select optgroup {
             background-color: #1e293b;
-            color: var(--text-dim);
+            color: var(--gold);
             font-style: normal;
             font-weight: bold;
         }
@@ -318,7 +318,9 @@
             <h3 style="margin-top:0; font-size:16px; color:var(--text-main);">Simulation Context</h3>
             <p style="color:var(--text-dim); font-size:12px; margin-bottom:15px; line-height: 1.4;">
                 Charting <strong>50 possible futures</strong> of <span id="betsDisplay"></span> bets for: <span id="bestValueList"></span>.<br>
-                <span style="color:var(--hero)">● Blue</span>: You | <span style="color:var(--gold)">● Gold</span>: Avg | <span style="color:var(--success)">● Green</span>: Math
+                <span style="color:var(--hero)">● Blue</span>: You | 
+                <span style="color:var(--gold)">● Gold</span>: Avg | 
+                <span id="mathLegendDot" style="color:var(--success)">●</span> <span style="color:var(--text-dim)">Math</span>
             </p>
         </div>
         
@@ -393,10 +395,8 @@
             let scenarios = getScenarios();
             let validScenarios = scenarios.filter(s => isSupported(s.type, legs));
             
-            // New Grouped Dropdown Logic
-            populateChartDropdown(validScenarios);
+            populateChartDropdown(validScenarios, winRate, legs);
 
-            // Grouping Logic for Simulation
             let mathGroups = {}; 
             validScenarios.forEach(s => {
                 let sig = getMathSignature(legs, s.conf, s.flex);
@@ -517,7 +517,10 @@
 
         let evMultiplier = calculateExpectedValue(winRate, legs, selected.conf, selected.flex);
         let theoreticalProfitPerBet = (evMultiplier - 1) * wager;
+        
+        // --- DYNAMIC LEGEND COLOR ---
         let mathColor = (evMultiplier >= 1.0) ? '#4ade80' : '#f87171'; 
+        document.getElementById('mathLegendDot').style.color = mathColor;
         
         let mathData = [];
         let interval = Math.max(1, Math.floor(sims / 200));
@@ -529,6 +532,7 @@
         renderChart(ghostRuns, heroData, averageData, mathData, sims, mathColor);
     }
 
+    // Helper: Create unique signature for Math Grouping
     function getMathSignature(legs, structure, isFlex) {
         if(!isFlex) {
             return `${legs}-${structure[legs]}x`; 
@@ -548,6 +552,7 @@
 
         for(let i=1; i<=totalBets; i++) {
             let wins = 0;
+            // Loop unrolling for slight speed boost
             for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
             let pnl = calcProfit(wins, legs, wager, structure, isFlex);
             bankroll += pnl;
@@ -577,6 +582,7 @@
             });
         });
 
+        // Math Line (Dynamic Color passed from updateChartSelection)
         datasets.push({ label: 'Math Expectation', data: mathRun, borderColor: mathColor, borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0, order: 0 });
         datasets.push({ label: 'Your Run', data: heroRun, borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.1, order: 1 });
         datasets.push({ label: 'Average', data: averageRun, borderColor: '#fbbf24', borderWidth: 3, pointRadius: 0, fill: false, tension: 0.1, order: 0 });
@@ -624,36 +630,50 @@
     }
 
     // --- HELPERS ---
-    function populateChartDropdown(scenarios) {
+    function populateChartDropdown(validScenarios, winRate, legs) {
         const select = document.getElementById('chartStrategy');
         select.innerHTML = '';
         
-        const groups = {};
-        
-        // Parse the name to separate Book (PrizePicks) from Type (Power)
-        scenarios.forEach(s => {
-            const parts = s.name.split(' '); // Split "PrizePicks Power"
-            const bookName = parts[0];       // "PrizePicks"
-            const typeName = parts.slice(1).join(' '); // "Power"
-            
-            if(!groups[bookName]) groups[bookName] = [];
-            groups[bookName].push({ id: s.type, label: typeName });
+        let groups = {};
+
+        validScenarios.forEach(s => {
+            let sig = getMathSignature(legs, s.conf, s.flex);
+            let ev = calculateExpectedValue(winRate, legs, s.conf, s.flex);
+
+            if (!groups[sig]) {
+                let label = "";
+                if (!s.flex) {
+                    label = `Power Structure (${s.conf[legs]}x)`;
+                } else {
+                    let tiers = s.conf[legs];
+                    let vals = Object.values(tiers).sort((a,b) => b-a).join(' | ');
+                    label = `Flex Structure (${vals}x)`;
+                }
+
+                groups[sig] = {
+                    signature: sig,
+                    ev: ev,
+                    label: label,
+                    items: []
+                };
+            }
+            groups[sig].items.push(s);
         });
 
-        // Create OptGroups
-        for(const [book, options] of Object.entries(groups)) {
-            const groupEl = document.createElement('optgroup');
-            groupEl.label = book;
-            
-            options.forEach(opt => {
-                const optionEl = document.createElement('option');
-                optionEl.value = opt.id;
-                optionEl.innerText = opt.label;
-                groupEl.appendChild(optionEl);
+        let sortedGroups = Object.values(groups).sort((a, b) => b.ev - a.ev);
+
+        sortedGroups.forEach(group => {
+            let optgroup = document.createElement('optgroup');
+            optgroup.label = group.label;
+
+            group.items.forEach(s => {
+                let option = document.createElement('option');
+                option.value = s.type;
+                option.innerText = s.name;
+                optgroup.appendChild(option);
             });
-            
-            select.appendChild(groupEl);
-        }
+            select.appendChild(optgroup);
+        });
     }
 
     function formatMoney(amount) {
