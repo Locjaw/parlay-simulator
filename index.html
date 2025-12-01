@@ -450,8 +450,9 @@
                 let badgesHtml = '';
                 let beRate = calculateExactBreakEven(legs, s.conf, s.flex);
                 let beOdds = rateToAmerican(beRate);
+                let bePct = (beRate * 100).toFixed(1) + "%";
                 
-                badgesHtml += `<span class="odds-tag" title="Break Even Odds">${beOdds}</span> `;
+                badgesHtml += `<span class="odds-tag" title="Break Even: ${beOdds} implies you need to win ${bePct} of your legs to profit.">${beOdds} (${bePct})</span> `;
                 
                 if (isBestValue) {
                     badgesHtml += `<span class="rec-badge" title="Mathematical Winner">🏆 BEST VALUE</span>`;
