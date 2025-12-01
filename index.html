@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EV Parlay Simulator v6.2 (Landscape Fixed)</title>
+    <title>EV Parlay Simulator v1.2</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -219,11 +219,9 @@
 
         /* --- LANDSCAPE MODE LOGIC --- */
         @media screen and (orientation: landscape) and (max-height: 500px) {
-            /* 1. If Sim is NOT active (body doesn't have class), show warning */
             body:not(.sim-active) .landscape-warning { display: flex; }
             body:not(.sim-active) .container { display: none; }
 
-            /* 2. If Sim IS active, show Fullscreen Chart */
             body.sim-active { padding: 0; margin: 0; background-color: #0f172a; overflow: hidden; }
             body.sim-active .container { padding: 0; border: none; box-shadow: none; max-width: none; background: transparent; }
             h2, .controls, button, .table-container, .loading, .results-table { display: none !important; }
@@ -262,7 +260,7 @@
 </div>
 
 <div class="container">
-    <h2>EV Parlay Simulator <span class="badge">v6.2</span></h2>
+    <h2>EV Parlay Simulator <span class="badge">v1.2</span></h2>
     
     <div class="controls">
         <div class="control-group">
@@ -275,7 +273,7 @@
         </div>
         <div class="control-group">
             <label title="Total selections in the parlay">Number of Legs</label>
-            <input type="number" id="legs" value="5" min="2" max="8" inputmode="numeric" oninput="validateInteger(this)">
+            <input type="number" id="legs" value="3" min="2" max="8" inputmode="numeric" oninput="validateInteger(this)">
         </div>
         <div class="control-group">
             <label title="Total bets simulated. Lower numbers = Higher variance.">Total Bets (Volume)</label>
@@ -320,7 +318,7 @@
         <div class="controls chart-desc-text" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px; grid-template-columns: 1fr;">
              <div class="control-group">
                 <label>View Strategy</label>
-                <select id="chartStrategy" onchange="runVisualizerOnly()">
+                <select id="chartStrategy" onchange="updateChartSelection()">
                     </select>
             </div>
         </div>
@@ -329,7 +327,7 @@
 </div>
 
 <script>
-    // --- PAYOUT CONFIGURATION (2025) ---
+    // --- CONFIGURATION ---
     const CONFIG = {
         PrizePicks: {
             Power: { 2: 3, 3: 6, 4: 10, 5: 20, 6: 37.5 },
@@ -346,8 +344,8 @@
     };
 
     let myChart = null;
-    let globalUserData = null; 
-    let lastSimParams = {};
+    let globalSimulationData = {}; // Stores all 50 runs for each math group
+    let globalScenarioMap = {}; // Maps each scenario ID to its specific assigned run index
 
     function validateInteger(input) {
         if(input.value.includes('.')) input.value = Math.floor(parseFloat(input.value));
@@ -368,7 +366,6 @@
         visSection.classList.add('hidden');
         loading.classList.remove('hidden');
 
-        // *** FIX: Flag body to enable landscape mode ***
         document.body.classList.add('sim-active');
 
         const sims = Math.floor(parseFloat(document.getElementById('sims').value));
@@ -379,27 +376,67 @@
         document.getElementById('betsDisplay').innerText = sims.toLocaleString();
 
         setTimeout(() => {
+            // 1. Setup Scenarios
             let scenarios = getScenarios();
             let validScenarios = scenarios.filter(s => isSupported(s.type, legs));
-
             populateChartDropdown(validScenarios);
 
+            // 2. Identify Unique Math Groups
+            let mathGroups = {}; // Key: "Signature", Value: { scenarios: [], runs: [] }
+            
+            validScenarios.forEach(s => {
+                let sig = getMathSignature(legs, s.conf, s.flex);
+                if(!mathGroups[sig]) mathGroups[sig] = { signature: sig, scenarios: [], runs: [] };
+                mathGroups[sig].scenarios.push(s);
+            });
+
+            // 3. Run Simulations per Group (Batch of 50)
+            for(let key in mathGroups) {
+                let group = mathGroups[key];
+                // Run 50 sims for this math signature
+                for(let i=0; i<50; i++) {
+                    // Use config from the first scenario in the group (they are identical)
+                    let ref = group.scenarios[0];
+                    let run = runSingleSimulation(sims, legs, winRate, wager, ref.conf, ref.flex);
+                    group.runs.push(run);
+                }
+            }
+
+            // 4. Assign Specific Runs to Scenarios (Strict Indexing)
+            // Example: PP 3-Leg gets Run #0, UD 3-Leg gets Run #1
+            globalSimulationData = mathGroups;
+            globalScenarioMap = {};
+
+            let maxSimProfit = -Infinity;
+            let chartTarget = null;
             let maxMathEV = -Infinity;
+
+            // Calculate Math EV first for badges
             validScenarios.forEach(s => {
                 s.mathEV = calculateExpectedValue(winRate, legs, s.conf, s.flex);
                 if(s.mathEV > maxMathEV) maxMathEV = s.mathEV;
             });
 
             validScenarios.forEach(s => {
-                let run = runSingleSimulation(sims, legs, winRate, wager, s.conf, s.flex);
-                s.profit = run.finalProfit;
-                s.dataPoints = run.dataPoints;
+                let sig = getMathSignature(legs, s.conf, s.flex);
+                let group = mathGroups[sig];
+                
+                // Assign a unique index for this scenario within the group
+                let assignedIndex = group.scenarios.indexOf(s) % 50;
+                
+                // Store assignment
+                globalScenarioMap[s.type] = {
+                    groupKey: sig,
+                    runIndex: assignedIndex,
+                    runData: group.runs[assignedIndex]
+                };
+
+                s.profit = group.runs[assignedIndex].finalProfit; // This matches the chart line
+                
+                if(s.profit > maxSimProfit) maxSimProfit = s.profit;
             });
 
-            let maxSimProfit = -Infinity;
-            validScenarios.forEach(s => { if(s.profit > maxSimProfit) maxSimProfit = s.profit; });
-
-            let chartTarget = null;
+            // 5. Render Table
             const tbody = document.getElementById('resultsBody');
             tbody.innerHTML = '';
 
@@ -436,19 +473,77 @@
 
             if(!chartTarget) chartTarget = validScenarios[0];
 
-            lastSimParams = { sims, legs, winRate, wager };
-            globalUserData = chartTarget;
-
             loading.classList.add('hidden');
             table.classList.remove('hidden');
             visSection.classList.remove('hidden');
             btn.disabled = false;
 
+            // Initial Chart Render
             document.getElementById('chartStrategy').value = chartTarget.type;
-            document.getElementById('bestValueList').innerText = chartTarget.name;
-            runVisualizerOnly(true);
+            updateChartSelection();
 
         }, 100);
+    }
+
+    // New Function: Handles Dropdown Switch without Re-Running
+    function updateChartSelection() {
+        const type = document.getElementById('chartStrategy').value;
+        const assignment = globalScenarioMap[type];
+        
+        if(!assignment) return;
+
+        // Retrieve the pre-calculated group
+        const group = globalSimulationData[assignment.groupKey];
+        const heroRun = group.runs[assignment.runIndex]; // The specific run for this book
+        
+        // Setup Chart Data from Pre-Calc
+        const heroData = heroRun.dataPoints;
+        const ghostRuns = group.runs.map(r => r.dataPoints);
+        
+        // Calculate Average
+        let averageData = new Array(heroData.length).fill(0);
+        ghostRuns.forEach(runData => {
+            for(let i=0; i<runData.length; i++) averageData[i] += runData[i];
+        });
+        averageData = averageData.map(val => val / ghostRuns.length);
+
+        // Calculate Math Line (Re-calc is cheap)
+        const sims = Math.floor(parseFloat(document.getElementById('sims').value));
+        const wager = parseFloat(document.getElementById('wager').value);
+        const winRate = parseFloat(document.getElementById('winRate').value) / 100;
+        const legs = Math.floor(parseFloat(document.getElementById('legs').value));
+        let scenarios = getScenarios();
+        let selected = scenarios.find(s => s.type === type);
+        
+        document.getElementById('bestValueList').innerText = selected.name;
+
+        let evMultiplier = calculateExpectedValue(winRate, legs, selected.conf, selected.flex);
+        let theoreticalProfitPerBet = (evMultiplier - 1) * wager;
+        let mathColor = (evMultiplier >= 1.0) ? '#4ade80' : '#f87171'; 
+        
+        let mathData = [];
+        let interval = Math.max(1, Math.floor(sims / 200));
+        for(let i=1; i<=sims; i+=interval) {
+            mathData.push(theoreticalProfitPerBet * i);
+        }
+        if(mathData.length < averageData.length) mathData.push(theoreticalProfitPerBet * sims);
+
+        renderChart(ghostRuns, heroData, averageData, mathData, sims, mathColor);
+    }
+
+    // Helper: Create unique signature for Math Grouping
+    function getMathSignature(legs, structure, isFlex) {
+        if(!isFlex) {
+            // Power: "3-6x"
+            return `${legs}-${structure[legs]}x`; 
+        } else {
+            // Flex: "3-F-3:2.25-2:1.25"
+            let tiers = structure[legs];
+            let keys = Object.keys(tiers).sort();
+            let sig = `${legs}-F`;
+            keys.forEach(k => sig += `-${k}:${tiers[k]}`);
+            return sig;
+        }
     }
 
     function runSingleSimulation(totalBets, legs, winRate, wager, structure, isFlex) {
@@ -458,59 +553,13 @@
 
         for(let i=1; i<=totalBets; i++) {
             let wins = 0;
+            // Loop unrolling for slight speed boost
             for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
             let pnl = calcProfit(wins, legs, wager, structure, isFlex);
             bankroll += pnl;
             if(i % interval === 0) dataPoints.push(bankroll);
         }
         return { finalProfit: bankroll, dataPoints: dataPoints };
-    }
-
-    function runVisualizerOnly(useExistingHero = false) {
-        const type = document.getElementById('chartStrategy').value;
-        const { sims, legs, winRate, wager } = lastSimParams;
-        // Chart now uses the exact same volume as the simulation
-        const betsPerRun = sims; 
-
-        let scenarios = getScenarios();
-        let selected = scenarios.find(s => s.type === type);
-        
-        document.getElementById('bestValueList').innerText = selected.name;
-
-        let heroData = [];
-        if (useExistingHero && globalUserData && globalUserData.type === type) {
-            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
-            heroData = run.dataPoints;
-        } else {
-            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
-            heroData = run.dataPoints;
-        }
-
-        let ghostRuns = [];
-        let averageData = new Array(heroData.length).fill(0);
-        let numGhostRuns = 49;
-
-        for(let r=0; r<numGhostRuns; r++) {
-            let run = runSingleSimulation(betsPerRun, legs, winRate, wager, selected.conf, selected.flex);
-            ghostRuns.push(run.dataPoints);
-            for(let i=0; i<run.dataPoints.length; i++) averageData[i] += run.dataPoints[i];
-        }
-
-        for(let i=0; i<heroData.length; i++) averageData[i] += heroData[i];
-        averageData = averageData.map(val => val / (numGhostRuns + 1));
-
-        let evMultiplier = calculateExpectedValue(winRate, legs, selected.conf, selected.flex);
-        let theoreticalProfitPerBet = (evMultiplier - 1) * wager;
-        let mathColor = (evMultiplier >= 1.0) ? '#4ade80' : '#f87171'; 
-        
-        let mathData = [];
-        let interval = Math.max(1, Math.floor(betsPerRun / 200));
-        for(let i=1; i<=betsPerRun; i+=interval) {
-            mathData.push(theoreticalProfitPerBet * i);
-        }
-        if(mathData.length < averageData.length) mathData.push(theoreticalProfitPerBet * betsPerRun);
-
-        renderChart(ghostRuns, heroData, averageData, mathData, betsPerRun, mathColor);
     }
 
     function renderChart(ghostRuns, heroRun, averageRun, mathRun, totalBets, mathColor) {
