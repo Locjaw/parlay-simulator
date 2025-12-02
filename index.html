@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EV Parlay Simulator v1.4</title>
+    <title>EV Parlay Simulator v1.5</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -105,7 +105,7 @@
             -webkit-appearance: none;
         }
 
-        /* Improved Dropdown Styling */
+        /* Improved Dropdown Styling for Groups */
         select optgroup {
             background-color: #1e293b;
             color: var(--gold);
@@ -274,7 +274,7 @@
 </div>
 
 <div class="container">
-    <h2>EV Parlay Simulator <span class="badge">v1.4</span></h2>
+    <h2>EV Parlay Simulator <span class="badge">v1.5</span></h2>
     
     <div class="controls">
         <div class="control-group">
@@ -559,6 +559,7 @@
 
         for(let i=1; i<=totalBets; i++) {
             let wins = 0;
+            // Loop unrolling for slight speed boost
             for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
             let pnl = calcProfit(wins, legs, wager, structure, isFlex);
             bankroll += pnl;
@@ -588,6 +589,7 @@
             });
         });
 
+        // Math Line (Dynamic Color passed from updateChartSelection)
         datasets.push({ label: 'Math Expectation', data: mathRun, borderColor: mathColor, borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0, order: 0 });
         datasets.push({ label: 'Your Run', data: heroRun, borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.1, order: 1 });
         datasets.push({ label: 'Average', data: averageRun, borderColor: '#fbbf24', borderWidth: 3, pointRadius: 0, fill: false, tension: 0.1, order: 0 });
@@ -634,6 +636,8 @@
         });
     }
 
+    // --- HELPERS ---
+    // NEW: Smart Grouping by Math Signature + Sorted by EV
     function populateChartDropdown(validScenarios, winRate, legs) {
         const select = document.getElementById('chartStrategy');
         select.innerHTML = '';
@@ -647,11 +651,11 @@
             if (!groups[sig]) {
                 let label = "";
                 if (!s.flex) {
-                    label = `Power Structure (${s.conf[legs]}x)`;
+                    label = `All-In Payout (${s.conf[legs]}x)`;
                 } else {
                     let tiers = s.conf[legs];
                     let vals = Object.values(tiers).sort((a,b) => b-a).join(' | ');
-                    label = `Flex Structure (${vals}x)`;
+                    label = `Insured Payout (${vals}x)`;
                 }
 
                 groups[sig] = {
@@ -664,6 +668,7 @@
             groups[sig].items.push(s);
         });
 
+        // Sort Groups: Highest EV First
         let sortedGroups = Object.values(groups).sort((a, b) => b.ev - a.ev);
 
         sortedGroups.forEach(group => {
