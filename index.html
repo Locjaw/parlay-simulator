@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EV Parlay Simulator v1.3</title>
+    <title>EV Parlay Simulator v1.4</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -105,7 +105,7 @@
             -webkit-appearance: none;
         }
 
-        /* Improved Dropdown Styling for Groups */
+        /* Improved Dropdown Styling */
         select optgroup {
             background-color: #1e293b;
             color: var(--gold);
@@ -274,7 +274,7 @@
 </div>
 
 <div class="container">
-    <h2>EV Parlay Simulator <span class="badge">v1.3</span></h2>
+    <h2>EV Parlay Simulator <span class="badge">v1.4</span></h2>
     
     <div class="controls">
         <div class="control-group">
@@ -287,7 +287,7 @@
         </div>
         <div class="control-group">
             <label title="Total selections in the parlay">Number of Legs</label>
-            <input type="number" id="legs" value="3" min="2" max="8" inputmode="numeric" oninput="validateInteger(this)">
+            <input type="number" id="legs" value="3" min="2" max="12" inputmode="numeric" oninput="validateInteger(this)">
         </div>
         <div class="control-group">
             <label title="Total bets simulated. Lower numbers = Higher variance.">Total Bets (Volume)</label>
@@ -356,6 +356,14 @@
         Betr: {
             Perfect: { 2: 3, 3: 6, 4: 10, 5: 20, 6: 35, 7: 50, 8: 100 },
             Dynamic: { 3: {3: 2.25, 2: 1.25}, 4: {4: 5, 3: 1.5}, 5: {5: 10, 4: 2.5}, 6: {6: 20, 5: 1.25, 4: 1.05}, 7: {7: 30, 6: 2, 5: 1.25}, 8: {8: 50, 7: 2, 6: 1.5, 5: 1.25} }
+        },
+        Dabble: {
+            Power: { 2: 3, 3: 6, 4: 10, 5: 20, 6: 35, 7: 60, 8: 100, 9: 150, 10: 250, 11: 500, 12: 1000 },
+            Insured: {
+                3: {3: 2.25, 2: 1.25}, 
+                4: {4: 5, 3: 1.5}, 
+                5: {5: 10, 4: 2.5}
+            }
         }
     };
 
@@ -365,8 +373,9 @@
 
     function validateInteger(input) {
         if(input.value.includes('.')) input.value = Math.floor(parseFloat(input.value));
+        // Soft validation for UI, hard validation logic in isSupported
         if(input.id === 'legs') {
-            if(input.value > 8) input.value = 8;
+            if(input.value > 12) input.value = 12; // Update for Dabble Max
             if(input.value < 2 && input.value !== '') input.value = 2;
         }
     }
@@ -518,7 +527,6 @@
         let evMultiplier = calculateExpectedValue(winRate, legs, selected.conf, selected.flex);
         let theoreticalProfitPerBet = (evMultiplier - 1) * wager;
         
-        // --- DYNAMIC LEGEND COLOR ---
         let mathColor = (evMultiplier >= 1.0) ? '#4ade80' : '#f87171'; 
         document.getElementById('mathLegendDot').style.color = mathColor;
         
@@ -532,7 +540,6 @@
         renderChart(ghostRuns, heroData, averageData, mathData, sims, mathColor);
     }
 
-    // Helper: Create unique signature for Math Grouping
     function getMathSignature(legs, structure, isFlex) {
         if(!isFlex) {
             return `${legs}-${structure[legs]}x`; 
@@ -552,7 +559,6 @@
 
         for(let i=1; i<=totalBets; i++) {
             let wins = 0;
-            // Loop unrolling for slight speed boost
             for(let l=0; l<legs; l++) { if(Math.random() < winRate) wins++; }
             let pnl = calcProfit(wins, legs, wager, structure, isFlex);
             bankroll += pnl;
@@ -582,7 +588,6 @@
             });
         });
 
-        // Math Line (Dynamic Color passed from updateChartSelection)
         datasets.push({ label: 'Math Expectation', data: mathRun, borderColor: mathColor, borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0, order: 0 });
         datasets.push({ label: 'Your Run', data: heroRun, borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.1, order: 1 });
         datasets.push({ label: 'Average', data: averageRun, borderColor: '#fbbf24', borderWidth: 3, pointRadius: 0, fill: false, tension: 0.1, order: 0 });
@@ -629,7 +634,6 @@
         });
     }
 
-    // --- HELPERS ---
     function populateChartDropdown(validScenarios, winRate, legs) {
         const select = document.getElementById('chartStrategy');
         select.innerHTML = '';
@@ -689,7 +693,10 @@
             { name: "Underdog Power", type: "ud_power", conf: CONFIG.Underdog.Power, flex: false },
             { name: "Underdog Insured", type: "ud_insured", conf: CONFIG.Underdog.Insured, flex: true },
             { name: "Betr Perfect", type: "betr_perf", conf: CONFIG.Betr.Perfect, flex: false },
-            { name: "Betr Dynamic", type: "betr_dyn", conf: CONFIG.Betr.Dynamic, flex: true }
+            { name: "Betr Dynamic", type: "betr_dyn", conf: CONFIG.Betr.Dynamic, flex: true },
+            // ADDED DABBLE
+            { name: "Dabble Power", type: "dabble_power", conf: CONFIG.Dabble.Power, flex: false },
+            { name: "Dabble Hedge", type: "dabble_hedge", conf: CONFIG.Dabble.Insured, flex: true }
         ];
     }
     // Math functions
@@ -743,6 +750,9 @@
         if(type === 'ud_power' && legs > 5) return false;
         if(type === 'ud_insured' && (legs < 3 || legs > 6)) return false;
         if(type.startsWith('betr') && legs > 8) return false;
+        // Dabble Rules: Power 2-12, Hedge 3-5 (for now)
+        if(type === 'dabble_power' && (legs > 12 || legs < 2)) return false;
+        if(type === 'dabble_hedge' && (legs > 5 || legs < 3)) return false;
         return true;
     }
 </script>
